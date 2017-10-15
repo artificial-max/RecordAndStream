@@ -26,7 +26,7 @@ public class MainActivity extends AppCompatActivity {
 
     AudioRecord recorder;
 
-    private int sampleRate = 16000; // 44100 for higher quality
+    private int sampleRate = 44100;
     private int channelConfig = AudioFormat.CHANNEL_IN_MONO;
     private int audioFormat = AudioFormat.ENCODING_PCM_16BIT;
     int minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
