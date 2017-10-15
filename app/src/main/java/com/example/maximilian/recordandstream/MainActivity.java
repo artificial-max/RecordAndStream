@@ -26,10 +26,12 @@ public class MainActivity extends AppCompatActivity {
 
     AudioRecord recorder;
 
-    private int sampleRate = 16000; // 44100 for higher quality
-    private int channelConfig = AudioFormat.CHANNEL_IN_MONO;
-    private int audioFormat = AudioFormat.ENCODING_PCM_16BIT;
-    int minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+    private static int[] mSampleRates = new int[] { 8000, 11025, 22050, 44100 };
+    int bufferSize;
+    //private int sampleRate = 16000 ; // 44100 for music
+    //private int channelConfig = AudioFormat.CHANNEL_IN_MONO;
+    //private int audioFormat = AudioFormat.ENCODING_PCM_16BIT;
+    //int minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +74,40 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Each android device may have different initialization settings.
+     * Try a view and return a working AudioRecord object if a working setting has been found.
+     * https://stackoverflow.com/questions/4843739/audiorecord-object-not-initializing
+     * @return
+     */
+    public AudioRecord findAudioRecord() {
+        for (int rate : mSampleRates) {
+            for (short audioFormat : new short[] { AudioFormat.ENCODING_PCM_8BIT, AudioFormat.ENCODING_PCM_16BIT }) {
+                for (short channelConfig : new short[] { AudioFormat.CHANNEL_IN_MONO, AudioFormat.CHANNEL_IN_STEREO }) {
+                    try {
+                        Log.d("VS", "Attempting rate " + rate + "Hz, bits: " + audioFormat + ", channel: "
+                                + channelConfig);
+                        bufferSize = AudioRecord.getMinBufferSize(rate, channelConfig, audioFormat);
+
+                        if (bufferSize != AudioRecord.ERROR_BAD_VALUE) {
+                            // check if we can instantiate and have a success
+                            AudioRecord recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, rate, channelConfig, audioFormat, bufferSize);
+
+                            if (recorder.getState() == AudioRecord.STATE_INITIALIZED)
+                                return recorder;
+                        }
+                    } catch (Exception e) {
+                        Log.e("VS", rate + "Exception, keep trying.",e);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // Props to Hugues Verlin
+    // https://stackoverflow.com/questions/15349987/stream-live-android-audio-to-server
+
     public void startStreaming() {
         recording = true;
         TextView textViewStatus = (TextView) findViewById(R.id.textViewStatus);
@@ -85,22 +121,30 @@ public class MainActivity extends AppCompatActivity {
                     DatagramSocket socket = new DatagramSocket();
                     Log.d("VS", "Socket Created");
 
-                    byte[] buffer = new byte[minBufSize];
+                    byte[] buffer = new byte[bufferSize];
 
-                    Log.d("VS", "Buffer created of size " + minBufSize);
+                    Log.d("VS", "Buffer created of size " + bufferSize);
                     DatagramPacket packet;
 
                     final InetAddress destination = InetAddress.getByName(ip);
                     Log.d("VS", "IP retrieved: " + destination.toString());
 
-                    recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, channelConfig, audioFormat, minBufSize * 10);
+                    //recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, channelConfig, audioFormat, minBufSize * 10);
+                    recorder = findAudioRecord();
+                    if(recorder == null){
+                        // Show an alert if no working setup could be found
+                        DialogFragment alert3 = new AudioRecorderInitAlert();
+                        alert3.show(getFragmentManager(), "error");
+                        return;
+                    }
                     Log.d("VS", "Recorder initialized");
+                    Thread.sleep(500);
 
                     recorder.startRecording();
 
                     while (recording) {
                         //reading data from MIC into buffer
-                        minBufSize = recorder.read(buffer, 0, buffer.length);
+                        bufferSize = recorder.read(buffer, 0, buffer.length);
 
                         //putting buffer in the packet
                         port = Integer.valueOf(portStr);
@@ -108,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
                         packet = new DatagramPacket(buffer, buffer.length, destination, port);
 
                         socket.send(packet);
-                        System.out.println("MinBufferSize: " + minBufSize);
+                        System.out.println("MinBufferSize: " + bufferSize);
                     }
 
                 } catch (UnknownHostException e) {
@@ -116,6 +160,8 @@ public class MainActivity extends AppCompatActivity {
                 } catch (IOException e) {
                     e.printStackTrace();
                     Log.e("VS", "IOException");
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         });
